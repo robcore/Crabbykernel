@@ -285,7 +285,7 @@ config SND_SOC_UDA1380
 
 config SND_SOC_WCD9304
 	tristate
-	
+
 config SND_SOC_WCD9306
 	tristate
 
@@ -458,8 +458,20 @@ config SND_SOC_TPA6130A2
 config SND_SOC_MSM_STUB
 	tristate
 
+config SOUND_CONTROL_HAX_GPL
+	tristate "wcd93xx sound control hax"
+	default y
+	help
+	  FauxSound WCD93xx chipset sound control hacks
+
 config SND_SOC_TPA2028D
 	bool "Audio subsystem TPA2028D"
 	default n
 	help
 	  Texas Instruments 3W Mono Class-D Audio Amplifier
+	  
+config SND_SOC_WCD9304_DRE
+	bool "DRE Patch for WCD9304"
+	default n
+	help
+	  If you use DRE for WCD9304 not WC9306 , use this
