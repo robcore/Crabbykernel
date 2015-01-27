@@ -27,7 +27,20 @@
 #include <sound/q6audio-v2.h>
 #include <sound/q6afe-v2.h>
 
-#define TIMEOUT_MS 1000
+#define TRUE        0x01
+#define FALSE       0x00
+#define READDONE_IDX_STATUS 0
+#define READDONE_IDX_BUFADD_LSW 1
+#define READDONE_IDX_BUFADD_MSW 2
+#define READDONE_IDX_MEMMAP_HDL 3
+#define READDONE_IDX_SIZE 4
+#define READDONE_IDX_OFFSET 5
+#define READDONE_IDX_LSW_TS 6
+#define READDONE_IDX_MSW_TS 7
+#define READDONE_IDX_FLAGS 8
+#define READDONE_IDX_NUMFRAMES 9
+#define READDONE_IDX_SEQ_ID 10
+#define FRAME_NUM             (8)
 
 #define RESET_COPP_ID 99
 #define INVALID_COPP_ID 0xFF
@@ -77,27 +90,70 @@ static int32_t adm_callback(struct apr_client_data *data, void *priv)
 					__func__, index, data->token);
 			return 0;
 		}
-		if (data->opcode == APR_BASIC_RSP_RESULT) {
-			pr_debug("APR_BASIC_RSP_RESULT id %x\n", payload[0]);
-			switch (payload[0]) {
-			case ADM_CMD_SET_PP_PARAMS_V5:
-				if (rtac_make_adm_callback(
-					payload, data->payload_size))
-					pr_debug("%s: payload[0]: 0x%x\n",
-						__func__, payload[0]);
-					break;
-			case ADM_CMD_DEVICE_CLOSE_V5:
-			case ADM_CMD_SHARED_MEM_UNMAP_REGIONS:
-			case ADM_CMD_SHARED_MEM_MAP_REGIONS:
-			case ADM_CMD_MATRIX_MAP_ROUTINGS_V5:
-				pr_debug("ADM_CMD_MATRIX_MAP_ROUTINGS\n");
-				atomic_set(&this_adm.copp_stat[index], 1);
-				wake_up(&this_adm.wait[index]);
-				break;
-			default:
-				pr_err("%s: Unknown Cmd: 0x%x\n", __func__,
-								payload[0]);
-				break;
+		if (bufcnt > FRAME_NUM)
+			goto fail;
+		mutex_lock(&ac->cmd_lock);
+		buf = kzalloc(((sizeof(struct audio_buffer))*bufcnt),
+				GFP_KERNEL);
+
+		if (!buf) {
+			mutex_unlock(&ac->cmd_lock);
+			goto fail;
+		}
+
+		ac->port[dir].buf = buf;
+
+		while (cnt < bufcnt) {
+			if (bufsz > 0) {
+				if (!buf[cnt].data) {
+					buf[cnt].client = msm_ion_client_create
+						(UINT_MAX, "audio_client");
+					if (IS_ERR_OR_NULL((void *)
+						buf[cnt].client)) {
+						pr_err("%s: ION create client for AUDIO failed\n",
+						__func__);
+						goto fail;
+					}
+					buf[cnt].handle = ion_alloc
+						(buf[cnt].client, bufsz, SZ_4K,
+						(0x1 << ION_AUDIO_HEAP_ID), 0);
+					if (IS_ERR_OR_NULL((void *)
+						buf[cnt].handle)) {
+						pr_err("%s: ION memory allocation for AUDIO failed\n",
+							__func__);
+						goto fail;
+					}
+
+					rc = ion_phys(buf[cnt].client,
+						buf[cnt].handle,
+						(ion_phys_addr_t *)
+						&buf[cnt].phys,
+						(size_t *)&len);
+					if (rc) {
+						pr_err("%s: ION Get Physical for AUDIO failed, rc = %d\n",
+							__func__, rc);
+						goto fail;
+					}
+
+					buf[cnt].data = ion_map_kernel
+					(buf[cnt].client, buf[cnt].handle);
+					if (IS_ERR_OR_NULL((void *)
+						buf[cnt].data)) {
+						pr_err("%s: ION memory mapping for AUDIO failed\n",
+						 __func__);
+						goto fail;
+					}
+					memset((void *)buf[cnt].data, 0, bufsz);
+					buf[cnt].used = 1;
+					buf[cnt].size = bufsz;
+					buf[cnt].actual_size = bufsz;
+					pr_debug("%s data[%p]phys[%p][%p]\n",
+						__func__,
+					   (void *)buf[cnt].data,
+					   (void *)buf[cnt].phys,
+					   (void *)&buf[cnt].phys);
+					cnt++;
+				}
 			}
 			return 0;
 		}
