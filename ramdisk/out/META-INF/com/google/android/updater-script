@@ -1,0 +1,8 @@
+ui_print("/////////////////////");
+ui_print("crabbykernel");
+ui_print("/////////////////////");
+ui_print("");
+ui_print("Install Kernel");
+package_extract_file("boot.img", "/dev/block/platform/msm_sdcc.1/by-name/boot");
+ui_print("");
+ui_print("Done");
